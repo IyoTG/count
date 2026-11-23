@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小公司收支與每月每人統計</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --surface: #162033;
+      --surface-2: #1f2d46;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --income: #34d399;
+      --expense: #fb7185;
+      --border: rgba(255, 255, 255, 0.1);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 22px 14px 64px;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    h1 { font-size: 1.6rem; }
+    .sub { color: var(--muted); font-size: 0.88rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .auth-box, .toolbar, .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+    .stat-box {
+      background: var(--surface-2);
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .stat-label { font-size: 0.84rem; color: var(--muted); }
+    .stat-val { font-size: 1.35rem; font-weight: 700; margin-top: 2px; }
+    .income { color: var(--income); }
+    .expense { color: var(--expense); }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    label { display: block; font-size: 0.84rem; color: var(--muted); margin-bottom: 5px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 11px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+    button {
+      padding: 9px 14px;
+      border-radius: 9px;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+    .btn-add { background: var(--accent); color: #05121d; height: 39px; }
+    .btn-ghost {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-del {
+      background: transparent;
+      color: var(--expense);
+      padding: 4px 8px;
+      font-size: 0.82rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    textarea { min-height: 185px; font-family: ui-monospace, monospace; font-size: 0.85rem; margin-top: 10px; }
+    .muted-note { color: var(--muted); font-size: 0.84rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>小公司收支與每月每人統計</h1>
+        <p class="sub" id="sync-status">本機模式（可填入 Firebase 設定啟用多機同步）</p>
+      </div>
+      <div class="auth-box">
+        <button type="button" class="btn-add" id="google-login-btn" style="height:auto;">Google 登入同步</button>
+        <button type="button" class="btn-ghost" id="refresh-btn" style="display:none;">重新同步</button>
+        <button type="button" class="btn-ghost" id="logout-btn" style="display:none;">登出</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-bar" style="justify-content: space-between; margin-bottom: 14px;">
+        <h2 style="font-size:1.05rem;">月份總覽與每人收支統計</h2>
+        <div class="filter-bar">
+          <label for="filter-month" style="margin:0;">查詢月份：</label>
+          <input type="month" id="filter-month" style="width:auto;" />
+          <input type="text" id="filter-person" placeholder="搜尋對象／人員..." style="width:160px;" />
+        </div>
+      </div>
+      <div class="summary-grid" id="summary-grid"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1.05rem; margin-bottom:12px;">新增收支紀錄</h2>
+      <form id="tx-form" class="form-grid">
+        <div>
+          <label for="tx-type">收支類型</label>
+          <select id="tx-type">
+            <option value="income">收入</option>
+            <option value="expense">支出</option>
+          </select>
+        </div>
+        <div>
+          <label for="tx-date">日期</label>
+          <input type="date" id="tx-date" required />
+        </div>
+        <div>
+          <label for="tx-person">對象（客戶／人員）</label>
+          <input type="text" id="tx-person" list="person-suggestions" placeholder="例如：王大明 / 建興工程" required />
+          <datalist id="person-suggestions"></datalist>
+        </div>
+        <div>
+          <label for="tx-machine">機具</label>
+          <input type="text" id="tx-machine" list="machine-suggestions" placeholder="例如：怪手A / 堆高機" />
+          <datalist id="machine-suggestions"></datalist>
+        </div>
+        <div>
+          <label for="tx-qty">數量</label>
+          <input type="number" id="tx-qty" min="0" step="any" value="1" required />
+        </div>
+        <div>
+          <label for="tx-amount">金額</label>
+          <input type="number" id="tx-amount" min="1" step="1" placeholder="例如：15000" required />
+        </div>
+        <div style="grid-column: span 2;">
+          <label for="tx-note">備註（選填）</label>
+          <input type="text" id="tx-note" placeholder="工地名稱、零件、請款說明..." />
+        </div>
+        <div>
+          <button type="submit" class="btn-add">儲存紀錄</button>
+        </div>
+      </form>
+      <p class="muted-note">小提醒：輸入過的「對象」與「機具」會自動加入下拉建議，減少手機打字時間。</p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1.05rem; margin-bottom:10px;">當月每人／各對象收支統計</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>對象（客戶／人員）</th>
+              <th>筆數</th>
+              <th>總數量</th>
+              <th>收入</th>
+              <th>支出</th>
+              <th>淨額（收－支）</th>
+            </tr>
+          </thead>
+          <tbody id="person-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <button type="button" class="btn-ghost" id="copy-report">一鍵複製當月報表</button>
+        <button type="button" class="btn-ghost" id="export-csv">匯出 CSV（Excel 可開）</button>
+        <button type="button" class="btn-ghost" id="export-json">匯出 JSON 備份</button>
+      </div>
+      <textarea id="report-text" readonly></textarea>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1.05rem; margin-bottom:10px;">當月收支明細</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>類型</th>
+              <th>對象</th>
+              <th>機具</th>
+              <th>數量</th>
+              <th>金額</th>
+              <th>備註</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="tx-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const FIREBASE_CONFIG = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const CACHE_KEY = "company_ledger_cache_v1";
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const currentMonthStr = todayStr.slice(0, 7);
+
+    document.getElementById("tx-date").value = todayStr;
+    document.getElementById("filter-month").value = currentMonthStr;
+
+    const hasConfig = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+    let auth, db, currentUser = null;
+    let records = loadCache();
+
+    if (hasConfig) {
+      const app = initializeApp(FIREBASE_CONFIG);
+      auth = getAuth(app);
+      db = getFirestore(app);
+    }
+
+    function loadCache() {
+      try {
+        return JSON.parse(localStorage.getItem(CACHE_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveCache(list) {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+    }
+
+    function fmtMoney(n) {
+      return Number(n || 0).toLocaleString("zh-Hant");
+    }
+
+    function esc(str) {
+      return String(str ?? "").replace(/[&<>"']/g, (m) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[m]));
+    }
+
+    function updateDatalists() {
+      const persons = [...new Set(records.map(r => (r.person || "").trim()).filter(Boolean))];
+      const machines = [...new Set(records.map(r => (r.machine || "").trim()).filter(Boolean))];
+      document.getElementById("person-suggestions").innerHTML = persons.map(p => `<option value="${esc(p)}">`).join("");
+      document.getElementById("machine-suggestions").innerHTML = machines.map(m => `<option value="${esc(m)}">`).join("");
+    }
+
+    async function fetchCloudRecords(uid) {
+      if (!db || !uid) return;
+      document.getElementById("sync-status").textContent = "正在從雲端同步...";
+      const q = query(collection(db, "users", uid, "records"), orderBy("date", "desc"));
+      const snap = await getDocs(q);
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      records = list;
+      saveCache(records);
+      render();
+      document.getElementById("sync-status").textContent = `已同步：${currentUser.email || currentUser.displayName}（共 ${records.length} 筆）`;
+    }
+
+    function render() {
+      updateDatalists();
+      const month = document.getElementById("filter-month").value || currentMonthStr;
+      const personKeyword = document.getElementById("filter-person").value.trim().toLowerCase();
+
+      const monthRecords = records
+        .filter(r => String(r.date || "").startsWith(month))
+        .filter(r => !personKeyword || String(r.person || "").toLowerCase().includes(personKeyword))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+      let totalIncome = 0, totalExpense = 0, totalQty = 0;
+      const personMap = {};
+
+      for (const r of monthRecords) {
+        const amt = Number(r.amount) || 0;
+        const qty = Number(r.qty) || 0;
+        const person = (r.person || "未指定對象").trim();
+        totalQty += qty;
+
+        if (!personMap[person]) {
+          personMap[person] = { name: person, count: 0, qty: 0, income: 0, expense: 0 };
+        }
+        personMap[person].count += 1;
+        personMap[person].qty += qty;
+
+        if (r.type === "income") {
+          totalIncome += amt;
+          personMap[person].income += amt;
+        } else {
+          totalExpense += amt;
+          personMap[person].expense += amt;
+        }
+      }
+
+      const net = totalIncome - totalExpense;
+      document.getElementById("summary-grid").innerHTML = `
+        <div class="stat-box">
+          <div class="stat-label">${month} 總收入</div>
+          <div class="stat-val income">+$${fmtMoney(totalIncome)}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">${month} 總支出</div>
+          <div class="stat-val expense">-$${fmtMoney(totalExpense)}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">${month} 淨利／結餘</div>
+          <div class="stat-val ${net >= 0 ? "income" : "expense"}">${net >= 0 ? "+" : "-"}$${fmtMoney(Math.abs(net))}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">${month} 總數量 / 筆數</div>
+          <div class="stat-val">${fmtMoney(totalQty)} <span style="font-size:0.95rem; color:var(--muted);">(${monthRecords.length} 筆)</span></div>
+        </div>
+      `;
+
+      const personRows = Object.values(personMap).sort((a, b) => (b.income - b.expense) - (a.income - a.expense));
+      document.getElementById("person-tbody").innerHTML = personRows.length
+        ? personRows.map(p => {
+            const pNet = p.income - p.expense;
+            return `
+              <tr>
+                <td><strong>${esc(p.name)}</strong></td>
+                <td>${p.count}</td>
+                <td>${fmtMoney(p.qty)}</td>
+                <td class="income">+$${fmtMoney(p.income)}</td>
+                <td class="expense">-$${fmtMoney(p.expense)}</td>
+                <td class="${pNet >= 0 ? "income" : "expense"}"><strong>${pNet >= 0 ? "+" : "-"}$${fmtMoney(Math.abs(pNet))}</strong></td>
+              </tr>
+            `;
+          }).join("")
+        : `<tr><td colspan="6" style="color:var(--muted); text-align:center;">此月份尚無符合條件的紀錄</td></tr>`;
+
+      document.getElementById("tx-tbody").innerHTML = monthRecords.length
+        ? monthRecords.map(r => `
+            <tr>
+              <td>${esc(r.date)}</td>
+              <td class="${r.type}">${r.type === "income" ? "收入" : "支出"}</td>
+              <td>${esc(r.person)}</td>
+              <td>${esc(r.machine || "—")}</td>
+              <td>${fmtMoney(r.qty)}</td>
+              <td class="${r.type}">${r.type === "income" ? "+" : "-"}$${fmtMoney(r.amount)}</td>
+              <td>${esc(r.note || "—")}</td>
+              <td><button class="btn-del" data-id="${esc(r.id)}">刪除</button></td>
+            </tr>
+          `).join("")
+        : `<tr><td colspan="8" style="color:var(--muted); text-align:center;">尚無當月明細</td></tr>`;
+
+      const reportPersonLines = personRows.length
+        ? personRows.map(p => {
+            const pNet = p.income - p.expense;
+            return `  • ${p.name}｜量:${fmtMoney(p.qty)}｜收:+$${fmtMoney(p.income)}｜支:-$${fmtMoney(p.expense)}｜淨:${pNet >= 0 ? "+" : "-"}$${fmtMoney(Math.abs(pNet))}`;
+          })
+        : ["  • 無紀錄"];
+
+      document.getElementById("report-text").value = [
+        `【${month} 小公司收支與每人統計報表】`,
+        `總收入：+$${fmtMoney(totalIncome)}`,
+        `總支出：-$${fmtMoney(totalExpense)}`,
+        `月淨額：${net >= 0 ? "+" : "-"}$${fmtMoney(Math.abs(net))}`,
+        `總數量：${fmtMoney(totalQty)}（共 ${monthRecords.length} 筆）`,
+        ``,
+        `【每月每人／各對象明細】`,
+        ...reportPersonLines
+      ].join("\n");
+    }
+
+    document.getElementById("tx-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const type = document.getElementById("tx-type").value;
+      const date = document.getElementById("tx-date").value;
+      const person = document.getElementById("tx-person").value.trim();
+      const machine = document.getElementById("tx-machine").value.trim();
+      const qty = Number(document.getElementById("tx-qty").value) || 0;
+      const amount = Number(document.getElementById("tx-amount").value) || 0;
+      const note = document.getElementById("tx-note").value.trim();
+
+      if (!date || !person || amount <= 0) return;
+
+      const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const item = { id, type, date, person, machine, qty, amount, note };
+
+      records.unshift(item);
+      saveCache(records);
+      document.getElementById("filter-month").value = date.slice(0, 7);
+      render();
+
+      document.getElementById("tx-amount").value = "";
+      document.getElementById("tx-note").value = "";
+
+      if (currentUser && db) {
+        await setDoc(doc(db, "users", currentUser.uid, "records", id), {
+          type, date, person, machine, qty, amount, note
+        });
+      }
+    });
+
+    document.getElementById("tx-tbody").addEventListener("click", async (e) => {
+      if (!e.target.classList.contains("btn-del")) return;
+      const id = e.target.dataset.id;
+      records = records.filter(r => r.id !== id);
+      saveCache(records);
+      render();
+      if (currentUser && db) {
+        await deleteDoc(doc(db, "users", currentUser.uid, "records", id));
+      }
+    });
+
+    document.getElementById("copy-report").addEventListener("click", async () => {
+      const box = document.getElementById("report-text");
+      try {
+        await navigator.clipboard.writeText(box.value);
+        alert("已複製當月報表！");
+      } catch {
+        box.select();
+        document.execCommand("copy");
+        alert("已選取並複製當月報表！");
+      }
+    });
+
+    document.getElementById("export-csv").addEventListener("click", () => {
+      const headers = ["日期", "類型", "對象", "機具", "數量", "金額", "備註"];
+      const rows = records.map(r => [
+        r.date,
+        r.type === "income" ? "收入" : "支出",
+        r.person,
+        r.machine || "",
+        r.qty ?? 0,
+        r.amount ?? 0,
+        r.note || ""
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+      const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `公司收支明細_${todayStr}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("export-json").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(records, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `公司記帳備份_${todayStr}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("filter-month").addEventListener("change", render);
+    document.getElementById("filter-person").addEventListener("input", render);
+
+    document.getElementById("google-login-btn").addEventListener("click", async () => {
+      if (!hasConfig) return alert("請先設定 FIREBASE_CONFIG。");
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      if (auth) await signOut(auth);
+    });
+
+    document.getElementById("refresh-btn").addEventListener("click", async () => {
+      if (currentUser) await fetchCloudRecords(currentUser.uid);
+    });
+
+    if (auth) {
+      onAuthStateChanged(auth, async (user) => {
+        currentUser = user;
+        document.getElementById("google-login-btn").style.display = user ? "none" : "inline-block";
+        document.getElementById("logout-btn").style.display = user ? "inline-block" : "none";
+        document.getElementById("refresh-btn").style.display = user ? "inline-block" : "none";
+        if (user) {
+          await fetchCloudRecords(user.uid);
+        } else {
+          document.getElementById("sync-status").textContent = "尚未登入 — 目前為本機快取模式";
+          render();
+        }
+      });
+    } else {
+      render();
+    }
+  </script>
+</body>
+</html>
